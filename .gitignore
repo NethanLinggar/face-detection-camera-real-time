@@ -1,0 +1,61 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Distribution files
+dist/
+build/
+
+# Coverage output directory
+coverage/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Generated files
+*.sublime-workspace
+
+# IDE settings
+*.iml
+*.ipr
+*.iws
+
+# Package lock
+package-lock.json
+yarn.lock
+
+# Database
+*.sqlite
+*.db
+*.log
+
+# dotenv environment variables file
+.env
+.env.test
+
+# Production build
+public
+
+database

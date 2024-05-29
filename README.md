@@ -1,0 +1,1 @@
+A real-time face recognition system using DeepFace and OpenCV.
