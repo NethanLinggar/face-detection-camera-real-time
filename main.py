@@ -1,5 +1,7 @@
 import threading
 import time
+import os
+from dotenv import load_dotenv
 import cv2
 from deepface import DeepFace
 import requests
@@ -7,9 +9,16 @@ from datetime import datetime, timedelta
 import queue
 
 # List of available backends, models, and distance metrics
-backends = ["opencv", "ssd", "dlib", "mtcnn", "retinaface"]
-models = ["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"]
-metrics = ["cosine", "euclidean", "euclidean_l2"]
+# backends = ["opencv", "ssd", "dlib", "mtcnn", "retinaface"]
+# models = ["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"]
+# metrics = ["cosine", "euclidean", "euclidean_l2"]
+
+load_dotenv()
+
+db_path = os.getenv("DATABASE_PATH")
+model_name = os.getenv("MODEL_NAME")
+detector_backend = os.getenv("DETECTOR_BACKEND")
+distance_metric = os.getenv("DISTANCE_METRIC")
 
 class VideoCaptureThread:
     def __init__(self, src=0):
@@ -58,7 +67,7 @@ class FaceRecognitionThread:
             if self.frame_count % self.skip_frames == 0:
                 try:
                     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-                    people = DeepFace.find(img_path=small_frame, db_path="database/", model_name="Facenet512", distance_metric="euclidean_l2", enforce_detection=False)
+                    people = DeepFace.find(img_path=small_frame, db_path=db_path, model_name=model_name, distance_metric=distance_metric, enforce_detection=False)
                     detected_faces = []
                     for person in people:
                         x = int(person['source_x'][0] * 2)
@@ -72,7 +81,7 @@ class FaceRecognitionThread:
                         current_time = datetime.now()
                         if name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=30):
                             data = {
-                                "userNrp": name.split('.')[0]
+                                "userNrp": os.path.basename(name).split('.')[0]
                             }
                             response = requests.post("http://localhost:3000/logs", json=data)
                             if response.status_code == 200:
@@ -108,7 +117,7 @@ def face_recognition(video_stream):
 
         for (x, y, w, h, name) in detected_faces:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, name, (x, y), cv2.FONT_ITALIC, 1, (0, 0, 255), 2)
+            cv2.putText(frame, os.path.basename(name).split('.')[0], (x, y), cv2.FONT_ITALIC, 1, (0, 0, 255), 2)
 
         cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
         cv2.resizeWindow('frame', 960, 720)
