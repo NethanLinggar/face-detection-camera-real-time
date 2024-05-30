@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import cv2
 from deepface import DeepFace
 import requests
+import json
 from datetime import datetime, timedelta
 import queue
 
@@ -52,6 +53,7 @@ class FaceRecognitionThread:
         self.skip_frames = skip_frames
         self.frame_count = 0
         self.stopped = False
+        self.latest_requests = []  # Store latest request names
 
     def start(self):
         threading.Thread(target=self.recognize_faces, args=()).start()
@@ -86,6 +88,10 @@ class FaceRecognitionThread:
                             response = requests.post("http://localhost:3000/logs", json=data)
                             if response.status_code == 200:
                                 print(f"Successfully logged face detection for {name}.")
+                                # Update latest requests
+                                self.latest_requests.append(os.path.basename(name).split('.')[0])
+                                if len(self.latest_requests) > 2:
+                                    self.latest_requests.pop(0)
                             else:
                                 print(f"Failed to log face detection for {name}.")
                             last_post_times[name] = current_time
@@ -101,11 +107,25 @@ class FaceRecognitionThread:
     def stop(self):
         self.stopped = True
 
+def save_users_to_json():
+    response = requests.get("http://localhost:3000/users")
+    if response.status_code == 200:
+        users = response.json()
+        with open('users.json', 'w') as f:
+            json.dump(users, f)
+    else:
+        print("Failed to fetch users.")
+
+def load_users_from_json():
+    with open('users.json', 'r') as f:
+        return json.load(f)['data']  # Access the 'data' key in the JSON response
+
 def face_recognition(video_stream):
     frame_queue = queue.Queue(maxsize=10)
     result_queue = queue.Queue(maxsize=10)
     recognition_thread = FaceRecognitionThread(frame_queue, result_queue).start()
     detected_faces = []  # List to store detected faces and their coordinates
+    users = load_users_from_json()  # Load users from the JSON file
 
     while True:
         frame = video_stream.read()
@@ -119,6 +139,17 @@ def face_recognition(video_stream):
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, os.path.basename(name).split('.')[0], (x, y), cv2.FONT_ITALIC, 1, (0, 0, 255), 2)
 
+        # Access the latest requests from the recognition thread
+        latest_requests = recognition_thread.latest_requests
+
+        # Display the two latest requests at the bottom of the frame
+        for i, request_name in enumerate(latest_requests[-2:]):
+            # Find the associated name from the JSON data
+            display_name = next((user['name'] for user in users if user['nrp'] == request_name), request_name)
+            display_text = f"Hello (ID: {request_name}) {display_name}!"
+            y_position = frame.shape[0] - (i + 1) * 30  # Position from the bottom
+            cv2.putText(frame, display_text, (10, y_position), cv2.FONT_ITALIC, 0.5, (255, 255, 255), 1)
+
         cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
         cv2.resizeWindow('frame', 960, 720)
         cv2.imshow('frame', frame)
@@ -131,6 +162,7 @@ def face_recognition(video_stream):
     cv2.destroyAllWindows()
 
 def main():
+    save_users_to_json()  # Save users to JSON file before starting face recognition
     video_stream = VideoCaptureThread().start()
     face_recognition(video_stream)
 

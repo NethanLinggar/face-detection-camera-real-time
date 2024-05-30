@@ -59,3 +59,4 @@ yarn.lock
 public
 
 database
+users.json
