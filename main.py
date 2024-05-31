@@ -107,6 +107,23 @@ class FaceRecognitionThread:
     def stop(self):
         self.stopped = True
 
+class UserJsonUpdaterThread:
+    def __init__(self, interval=10):
+        self.interval = interval
+        self.stopped = False
+
+    def start(self):
+        threading.Thread(target=self.update_users, args=()).start()
+        return self
+
+    def update_users(self):
+        while not self.stopped:
+            save_users_to_json()
+            time.sleep(self.interval)
+
+    def stop(self):
+        self.stopped = True
+
 def save_users_to_json():
     response = requests.get("http://localhost:3000/users")
     if response.status_code == 200:
@@ -127,9 +144,19 @@ def face_recognition(video_stream):
     detected_faces = []  # List to store detected faces and their coordinates
     users = load_users_from_json()  # Load users from the JSON file
 
+    # To detect changes in the JSON file, track the last modified time
+    users_json_path = 'users.json'
+    last_modified_time = os.path.getmtime(users_json_path)
+
     while True:
         frame = video_stream.read()
         frame_queue.put(frame)
+
+        # Check if the users.json file has been updated
+        current_modified_time = os.path.getmtime(users_json_path)
+        if current_modified_time != last_modified_time:
+            users = load_users_from_json()
+            last_modified_time = current_modified_time
 
         # Update detected faces if new results are available
         if not result_queue.empty():
@@ -164,6 +191,7 @@ def face_recognition(video_stream):
 def main():
     save_users_to_json()  # Save users to JSON file before starting face recognition
     video_stream = VideoCaptureThread().start()
+    user_updater_thread = UserJsonUpdaterThread(interval=10).start()  # Start the user updater thread
     face_recognition(video_stream)
 
 if __name__ == "__main__":
