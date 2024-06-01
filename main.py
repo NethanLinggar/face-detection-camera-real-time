@@ -30,13 +30,11 @@ class VideoCaptureThread:
         self.stopped = False
 
     def start(self):
-        threading.Thread(target=self.update, args=()).start()
+        threading.Thread(target=self.update, args=(), daemon=True).start()
         return self
 
     def update(self):
-        while True:
-            if self.stopped:
-                return
+        while not self.stopped:
             self.ret, self.frame = self.capture.read()
 
     def read(self):
@@ -56,7 +54,7 @@ class FaceRecognitionThread:
         self.latest_requests = []  # Store latest request names
 
     def start(self):
-        threading.Thread(target=self.recognize_faces, args=()).start()
+        threading.Thread(target=self.recognize_faces, args=(), daemon=True).start()
         return self
 
     def recognize_faces(self):
@@ -82,9 +80,7 @@ class FaceRecognitionThread:
                         # Check if it's time to send a POST request for this face
                         current_time = datetime.now()
                         if name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=30):
-                            data = {
-                                "userNrp": os.path.basename(name).split('.')[0]
-                            }
+                            data = {"userNrp": os.path.basename(name).split('.')[0]}
                             response = requests.post("http://localhost:3000/logs", json=data)
                             if response.status_code == 200:
                                 print(f"Successfully logged face detection for {name}.")
@@ -121,7 +117,7 @@ class UserJsonUpdaterThread:
         self.stopped = False
 
     def start(self):
-        threading.Thread(target=self.update_users, args=()).start()
+        threading.Thread(target=self.update_users, args=(), daemon=True).start()
         return self
 
     def update_users(self):
