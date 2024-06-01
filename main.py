@@ -96,6 +96,14 @@ class FaceRecognitionThread:
                                 print(f"Failed to log face detection for {name}.")
                             last_post_times[name] = current_time
 
+                        # Save the cropped face image
+                        cropped_face = frame[y:y+h, x:x+w]
+                        folder_path = os.path.join('test_' + model_name, os.path.basename(name).split('.')[0])
+                        os.makedirs(folder_path, exist_ok=True)
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        file_path = os.path.join(folder_path, f'{timestamp}.jpg')
+                        cv2.imwrite(file_path, cropped_face)
+
                     self.result_queue.put(detected_faces)
 
                 except Exception as e:
