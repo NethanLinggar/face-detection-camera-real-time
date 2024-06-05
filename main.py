@@ -17,15 +17,15 @@ import queue
 load_dotenv()
 
 db_path = os.getenv("DATABASE_PATH")
-model_name = os.getenv("MODEL_NAME")
-detector_backend = os.getenv("DETECTOR_BACKEND")
-distance_metric = os.getenv("DISTANCE_METRIC")
+model_name = "Facenet512"
+detector_backend = "dlib"
+distance_metric = "cosine"
 
 class VideoCaptureThread:
     def __init__(self, src=0):
         self.capture = cv2.VideoCapture(src)
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         self.ret, self.frame = self.capture.read()
         self.stopped = False
 
@@ -59,6 +59,7 @@ class FaceRecognitionThread:
 
     def recognize_faces(self):
         last_post_times = {}  # Dictionary to store the last post time for each detected face
+        start_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         while not self.stopped:
             frame = self.frame_queue.get()
             if frame is None:
@@ -94,7 +95,7 @@ class FaceRecognitionThread:
 
                         # Save the cropped face image
                         cropped_face = frame[y:y+h, x:x+w]
-                        folder_path = os.path.join('test_' + model_name, os.path.basename(name).split('.')[0])
+                        folder_path = os.path.join('test_' + model_name + '_' + start_timestamp, os.path.basename(name).split('.')[0])
                         os.makedirs(folder_path, exist_ok=True)
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                         file_path = os.path.join(folder_path, f'{timestamp}.jpg')
@@ -181,9 +182,9 @@ def face_recognition(video_stream):
             y_position = frame.shape[0] - (i + 1) * 30  # Position from the bottom
             cv2.putText(frame, display_text, (10, y_position), cv2.FONT_ITALIC, 0.5, (255, 255, 255), 1)
 
-        cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('frame', 960, 720)
-        cv2.imshow('frame', frame)
+        cv2.namedWindow('Presensi Wajah', cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty('Presensi Wajah', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+        cv2.imshow('Presensi Wajah', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -195,7 +196,7 @@ def face_recognition(video_stream):
 def main():
     save_users_to_json()  # Save users to JSON file before starting face recognition
     video_stream = VideoCaptureThread().start()
-    user_updater_thread = UserJsonUpdaterThread(interval=10).start()  # Start the user updater thread
+    UserJsonUpdaterThread(interval=10).start()  # Start the user updater thread
     face_recognition(video_stream)
 
 if __name__ == "__main__":
