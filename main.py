@@ -9,11 +9,6 @@ import json
 from datetime import datetime, timedelta
 import queue
 
-# List of available backends, models, and distance metrics
-# backends = ["opencv", "ssd", "dlib", "mtcnn", "retinaface"]
-# models = ["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"]
-# metrics = ["cosine", "euclidean", "euclidean_l2"]
-
 load_dotenv()
 
 db_path = os.getenv("DATABASE_PATH")
@@ -24,8 +19,8 @@ distance_metric = "cosine"
 class VideoCaptureThread:
     def __init__(self, src=0):
         self.capture = cv2.VideoCapture(src)
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.ret, self.frame = self.capture.read()
         self.stopped = False
 
@@ -45,7 +40,7 @@ class VideoCaptureThread:
         self.capture.release()
 
 class FaceRecognitionThread:
-    def __init__(self, frame_queue, result_queue, skip_frames=30):
+    def __init__(self, frame_queue, result_queue, skip_frames=10):
         self.frame_queue = frame_queue
         self.result_queue = result_queue
         self.skip_frames = skip_frames
@@ -59,7 +54,6 @@ class FaceRecognitionThread:
 
     def recognize_faces(self):
         last_post_times = {}  # Dictionary to store the last post time for each detected face
-        start_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         while not self.stopped:
             frame = self.frame_queue.get()
             if frame is None:
@@ -68,39 +62,62 @@ class FaceRecognitionThread:
             if self.frame_count % self.skip_frames == 0:
                 try:
                     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-                    people = DeepFace.find(img_path=small_frame, db_path=db_path, model_name=model_name, distance_metric=distance_metric, enforce_detection=False)
+                    face_objs = DeepFace.extract_faces(img_path=small_frame, detector_backend=detector_backend)
+                    people_found = DeepFace.find(img_path=small_frame, db_path=db_path, model_name=model_name, distance_metric=distance_metric, enforce_detection=False)
                     detected_faces = []
-                    for person in people:
-                        x = int(person['source_x'][0] * 2)
-                        y = int(person['source_y'][0] * 2)
-                        w = int(person['source_w'][0] * 2)
-                        h = int(person['source_h'][0] * 2)
-                        name = person['identity'][0].split('/')[1]
-                        detected_faces.append((x, y, w, h, name))
+                    processed_coords = set()
 
-                        # Check if it's time to send a POST request for this face
-                        current_time = datetime.now()
-                        if name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=30):
-                            data = {"userNrp": os.path.basename(name).split('.')[0]}
-                            response = requests.post("http://localhost:3000/logs", json=data)
-                            if response.status_code == 200:
-                                print(f"Successfully logged face detection for {name}.")
-                                # Update latest requests
-                                self.latest_requests.append(os.path.basename(name).split('.')[0])
-                                if len(self.latest_requests) > 2:
-                                    self.latest_requests.pop(0)
-                            else:
-                                print(f"Failed to log face detection for {name}.")
-                            last_post_times[name] = current_time
+                    for person in people_found:
+                        if not person.empty:
+                            x = int(person['source_x'][0] * 2)
+                            y = int(person['source_y'][0] * 2)
+                            w = int(person['source_w'][0] * 2)
+                            h = int(person['source_h'][0] * 2)
+                            name = os.path.basename(person['identity'][0].split('/')[1]).split('.')[0]
+                            if (x, y, w, h) not in processed_coords:
+                                detected_faces.append((x, y, w, h, name))
+                                processed_coords.add((x, y, w, h))
+                            # Check if it's time to send a POST request for this face
+                            current_time = datetime.now()
+                            if name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=30):
+                                data = {"userNrp": name}
+                                response = requests.post("http://localhost:3000/logs", json=data)
+                                if response.status_code == 200:
+                                    print(f"Successfully logged face detection for {name}.")
+                                    # Update latest requests
+                                    self.latest_requests.append(name)
+                                    if len(self.latest_requests) > 2:
+                                        self.latest_requests.pop(0)
+                                else:
+                                    print(f"Failed to log face detection for {name}.")
+                                last_post_times[name] = current_time
 
-                        # Save the cropped face image
-                        cropped_face = frame[y:y+h, x:x+w]
-                        folder_path = os.path.join('test_' + model_name + '_' + start_timestamp, os.path.basename(name).split('.')[0])
-                        os.makedirs(folder_path, exist_ok=True)
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    for face_obj in face_objs:
+                        facial_area = face_obj['facial_area']
+                        x = int(facial_area['x'] * 2)
+                        y = int(facial_area['y'] * 2)
+                        w = int(facial_area['w'] * 2)
+                        h = int(facial_area['h'] * 2)
+                        overlap = False
+    
+                        # Check for overlap with existing detected faces
+                        for (dx, dy, dw, dh, dname) in detected_faces:
+                            if (x < dx + dw and x + w > dx and y < dy + dh and y + h > dy):
+                                overlap = True
+                                break
+
+                        if not overlap and (x, y, w, h) not in processed_coords:
+                            detected_faces.append((x, y, w, h, "Unknown"))
+                            processed_coords.add((x, y, w, h))
+
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    folder_path = os.path.join('test_' + model_name + '_' + detector_backend, name)
+                    os.makedirs(folder_path, exist_ok=True)
+                    # Save frames with detected faces
+                    for (x, y, w, h, name) in detected_faces:
                         file_path = os.path.join(folder_path, f'{timestamp}.jpg')
-                        cv2.imwrite(file_path, cropped_face)
-
+                        cv2.imwrite(file_path, frame)
+ 
                     self.result_queue.put(detected_faces)
 
                 except Exception as e:
@@ -168,8 +185,10 @@ def face_recognition(video_stream):
             detected_faces = result_queue.get()
 
         for (x, y, w, h, name) in detected_faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, os.path.basename(name).split('.')[0], (x, y), cv2.FONT_ITALIC, 1, (0, 0, 255), 2)
+            color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            if name != "Unknown":
+                cv2.putText(frame, os.path.basename(name).split('.')[0], (x, y), cv2.FONT_ITALIC, 1, (0, 0, 255), 2)
 
         # Access the latest requests from the recognition thread
         latest_requests = recognition_thread.latest_requests
@@ -182,9 +201,9 @@ def face_recognition(video_stream):
             y_position = frame.shape[0] - (i + 1) * 30  # Position from the bottom
             cv2.putText(frame, display_text, (10, y_position), cv2.FONT_ITALIC, 0.5, (255, 255, 255), 1)
 
-        cv2.namedWindow('Presensi Wajah', cv2.WINDOW_NORMAL)
-        cv2.setWindowProperty('Presensi Wajah', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
-        cv2.imshow('Presensi Wajah', frame)
+        cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('frame', 960, 720)
+        cv2.imshow('frame', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -196,7 +215,7 @@ def face_recognition(video_stream):
 def main():
     save_users_to_json()  # Save users to JSON file before starting face recognition
     video_stream = VideoCaptureThread().start()
-    UserJsonUpdaterThread(interval=10).start()  # Start the user updater thread
+    user_updater_thread = UserJsonUpdaterThread(interval=10).start()  # Start the user updater thread
     face_recognition(video_stream)
 
 if __name__ == "__main__":
