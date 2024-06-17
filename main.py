@@ -63,7 +63,7 @@ class FaceRecognitionThread:
                 try:
                     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
                     face_objs = DeepFace.extract_faces(img_path=small_frame, detector_backend=detector_backend)
-                    people_found = DeepFace.find(img_path=small_frame, db_path=db_path, model_name=model_name, distance_metric=distance_metric, enforce_detection=False)
+                    people_found = DeepFace.find(img_path=small_frame, db_path=db_path, model_name=model_name, detector_backend=detector_backend, distance_metric=distance_metric, enforce_detection=False)
                     detected_faces = []
                     processed_coords = set()
 
