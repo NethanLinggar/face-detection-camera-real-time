@@ -13,7 +13,7 @@ load_dotenv()
 
 db_path = os.getenv("DATABASE_PATH")
 model_name = "Facenet512"
-detector_backend = "dlib"
+detector_backend = "opencv"
 distance_metric = "cosine"
 
 class VideoCaptureThread:
@@ -47,6 +47,8 @@ class FaceRecognitionThread:
         self.frame_count = 0
         self.stopped = False
         self.latest_requests = []  # Store latest request names
+        self.detection_counts = {}  # Dictionary to keep track of detection counts
+        self.start_time = time.time()  # Start time for FPS calculation
 
     def start(self):
         threading.Thread(target=self.recognize_faces, args=(), daemon=True).start()
@@ -77,20 +79,29 @@ class FaceRecognitionThread:
                             if (x, y, w, h) not in processed_coords:
                                 detected_faces.append((x, y, w, h, name))
                                 processed_coords.add((x, y, w, h))
-                            # Check if it's time to send a POST request for this face
-                            current_time = datetime.now()
-                            if name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=30):
-                                data = {"userNrp": name}
-                                response = requests.post("http://localhost:3000/logs", json=data)
-                                if response.status_code == 200:
-                                    print(f"Successfully logged face detection for {name}.")
-                                    # Update latest requests
-                                    self.latest_requests.append(name)
-                                    if len(self.latest_requests) > 2:
-                                        self.latest_requests.pop(0)
-                                else:
-                                    print(f"Failed to log face detection for {name}.")
-                                last_post_times[name] = current_time
+                                
+                                # Update detection count
+                                if name not in self.detection_counts:
+                                    self.detection_counts[name] = 0
+                                self.detection_counts[name] += 1
+
+                                # Check if the detection count has reached 5
+                                current_time = datetime.now()
+                                if self.detection_counts[name] == 5 and (name not in last_post_times or current_time - last_post_times[name] >= timedelta(minutes=10)):
+                                    data = {"userNrp": name}
+                                    response = requests.post("http://localhost:3000/logs", json=data)
+                                    if response.status_code == 200:
+                                        print(f"Successfully logged face detection for {name}.")
+                                        # Update latest requests
+                                        self.latest_requests.append(name)
+                                        if len(self.latest_requests) > 2:
+                                            self.latest_requests.pop(0)
+                                        # Update the last post time
+                                        last_post_times[name] = current_time
+                                    else:
+                                        print(f"Failed to log face detection for {name}.")
+                                    # Reset detection count
+                                    self.detection_counts[name] = 0
 
                     for face_obj in face_objs:
                         facial_area = face_obj['facial_area']
@@ -125,6 +136,11 @@ class FaceRecognitionThread:
                     self.result_queue.put([])
 
             self.frame_count += 1
+
+    def calculate_fps(self):
+        elapsed_time = time.time() - self.start_time
+        fps = self.frame_count / elapsed_time
+        return fps
 
     def stop(self):
         self.stopped = True
@@ -200,6 +216,10 @@ def face_recognition(video_stream):
             display_text = f"Hello (ID: {request_name}) {display_name}!"
             y_position = frame.shape[0] - (i + 1) * 30  # Position from the bottom
             cv2.putText(frame, display_text, (10, y_position), cv2.FONT_ITALIC, 0.5, (255, 255, 255), 1)
+
+        # Calculate and display FPS
+        fps = recognition_thread.calculate_fps()
+        cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_ITALIC, 0.5, (255, 255, 255), 1)
 
         cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
         cv2.resizeWindow('frame', 960, 720)
